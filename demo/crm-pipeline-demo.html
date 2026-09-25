@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM 销售管道 Demo —— 售前需求分析演示</title>
+<style>
+:root { --ink:#1a1a2e; --accent:#2563eb; --bg:#f4f6fb; --card:#ffffff; --border:#e2e6f0; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'PingFang SC','Microsoft YaHei',sans-serif; background:var(--bg); color:var(--ink); min-height:100vh; display:flex; flex-direction:column; }
+header { background:var(--ink); color:#fff; padding:12px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+header h1 { font-size:16px; font-weight:600; }
+header .sub { font-size:12px; opacity:.65; }
+.badge { background:rgba(37,99,235,.3); border:1px solid rgba(37,99,235,.7); color:#cfe0ff; font-size:11px; padding:2px 8px; border-radius:10px; margin-left:8px; }
+.toolbar { display:flex; gap:10px; padding:12px 20px; background:var(--card); border-bottom:1px solid var(--border); flex-wrap:wrap; align-items:center; }
+.toolbar button { border:1px solid var(--border); background:#fff; padding:7px 14px; border-radius:8px; font-size:13px; cursor:pointer; }
+.toolbar button:hover { border-color:var(--accent); }
+.toolbar button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+.stats { display:flex; gap:14px; flex-wrap:wrap; margin-left:auto; }
+.stat { background:#f8f9fd; border:1px solid var(--border); border-radius:8px; padding:6px 12px; font-size:12px; }
+.stat b { display:block; font-size:15px; color:var(--accent); }
+.board { flex:1; display:flex; gap:12px; padding:16px 20px; overflow-x:auto; align-items:flex-start; }
+.col { background:#eef1f8; border:1px solid var(--border); border-radius:10px; width:200px; flex-shrink:0; padding:10px; }
+.col h3 { font-size:13px; font-weight:600; display:flex; justify-content:space-between; align-items:center; }
+.col .cnt { font-size:11px; color:#888; font-weight:400; }
+.col .def { font-size:11px; color:#777; line-height:1.5; margin:6px 0 10px; padding-bottom:8px; border-bottom:1px dashed var(--border); }
+.card { background:#fff; border:1px solid var(--border); border-radius:8px; padding:9px 10px; margin-bottom:8px; font-size:12.5px; cursor:pointer; transition:.15s; }
+.card:hover { border-color:var(--accent); box-shadow:0 1px 4px rgba(37,99,235,.12); }
+.card .amt { color:var(--accent); font-weight:600; }
+.card .days { color:#999; font-size:11px; }
+.card .ops { display:flex; gap:6px; margin-top:6px; }
+.card .ops button { border:1px solid var(--border); background:#f8f9fd; font-size:11px; padding:2px 8px; border-radius:5px; cursor:pointer; }
+.card .ops button:hover { border-color:var(--accent); color:var(--accent); }
+.funnel { padding:0 20px 18px; }
+.funnel table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--border); border-radius:8px; overflow:hidden; font-size:12.5px; }
+.funnel th, .funnel td { padding:7px 12px; border-bottom:1px solid var(--border); text-align:left; }
+.funnel th { background:#f4f6fb; font-weight:600; }
+.funnel tr:last-child td { border-bottom:none; }
+.funnel .rate { color:var(--accent); font-weight:600; }
+.funnel .low { color:#d9534f; }
+.note { font-size:11.5px; color:#999; margin-top:8px; line-height:1.6; }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>CRM 销售管道看板 Demo<span class="badge">零依赖 · 离线可运行</span></h1><div class="sub">售前需求分析演示工具 · 销售流程可视化</div></div>
+  <div class="sub">演示 CRM 如何把销售流程标准化，并沉淀数据支持经营分析</div>
+</header>
+
+<div class="toolbar">
+  <button onclick="loadData('b2b')">场景 A · B2B 软件销售</button>
+  <button onclick="loadData('edu')">场景 B · 教育机构招生</button>
+  <button class="primary" onclick="showFunnel()">转化率 / 漏斗分析</button>
+  <button onclick="showFlow()">销售流程路径说明</button>
+  <div class="stats">
+    <div class="stat">管道总金额<b id="stTotal">-</b></div>
+    <div class="stat">成单金额<b id="stWon">-</b></div>
+    <div class="stat">赢单率<b id="stWin">-</b></div>
+  </div>
+</div>
+
+<div class="board" id="board"></div>
+<div class="funnel" id="funnel"></div>
+
+<script>
+// ============ 销售阶段定义（流程设计：每阶段对应一个要解决的业务问题） ============
+const STAGES = [
+  { name:'线索', def:'目标客户名单。要解决的问题：客户是谁、从哪来（市场/转介绍/自拓）。' },
+  { name:'初步沟通', def:'确认需求与意向。要解决的问题：有没有预算、有没有决策人、痛点是否真实。' },
+  { name:'方案/报价', def:'输出方案与报价。要解决的问题：产品如何匹配客户业务场景，价值怎么算。' },
+  { name:'谈判', def:'商务磋商。要解决的问题：价格异议、合同条款、竞品对比压力。' },
+  { name:'成单', def:'签约回款。要解决的问题：交付衔接与客户成功，带动续费与转介绍。' }
+];
+// ============ 示例数据（可替换为客户真实销售数据） ============
+const DATASETS = {
+  b2b: { note:'B2B 软件销售示例数据：某 SaaS 厂商销售管道（虚拟数据）。点击卡片上的按钮可推进/流失，观察管道变化与转化率。',
+    deals:[
+      {n:'恒达制造', amt:120000, s:0, lost:false, d:3}, {n:'华信物流', amt:80000, s:0, lost:false, d:5},
+      {n:'启明教育', amt:60000, s:0, lost:false, d:1}, {n:'安泰保险', amt:250000, s:1, lost:false, d:9},
+      {n:'蓝天医院', amt:180000, s:1, lost:false, d:14}, {n:'中科仪器', amt:90000, s:1, lost:false, d:6},
+      {n:'锐驰汽车', amt:300000, s:2, lost:false, d:21}, {n:'绿源环保', amt:150000, s:2, lost:false, d:11},
+      {n:'宏图地产', amt:200000, s:2, lost:false, d:30}, {n:'四方咨询', amt:70000, s:3, lost:false, d:26},
+      {n:'金桥商贸', amt:130000, s:3, lost:false, d:18}, {n:'云杉科技', amt:260000, s:4, lost:false, d:35},
+      {n:'天成零售', amt:110000, s:4, lost:false, d:40}, {n:'立信律所', amt:95000, s:2, lost:true, d:16},
+      {n:'永昌包装', amt:55000, s:1, lost:true, d:12}
+    ]},
+  edu: { note:'教育机构招生示例数据：某职业教育机构招生管道（虚拟数据）。CRM 同样的流程结构可适配不同行业，只需替换阶段定义与字段。',
+    deals:[
+      {n:'学员-张同学', amt:19800, s:0, lost:false, d:2}, {n:'学员-李同学', amt:23800, s:0, lost:false, d:4},
+      {n:'学员-王同学', amt:19800, s:0, lost:false, d:1}, {n:'学员-陈同学', amt:23800, s:1, lost:false, d:7},
+      {n:'学员-刘同学', amt:19800, s:1, lost:false, d:9}, {n:'学员-赵同学', amt:29800, s:2, lost:false, d:12},
+      {n:'学员-孙同学', amt:19800, s:2, lost:false, d:15}, {n:'学员-周同学', amt:23800, s:3, lost:false, d:20},
+      {n:'学员-吴同学', amt:29800, s:4, lost:false, d:28}, {n:'学员-郑同学', amt:19800, s:4, lost:false, d:33},
+      {n:'学员-冯同学', amt:19800, s:1, lost:true, d:10}, {n:'学员-蒋同学', amt:23800, s:2, lost:true, d:19}
+    ]}
+};
+let deals = [], currentKey = 'b2b';
+const money = v => '¥' + (v/10000).toFixed(1) + '万';
+
+function loadData(key){
+  currentKey = key;
+  deals = DATASETS[key].deals.map(x => Object.assign({}, x));
+  document.getElementById('funnel').innerHTML = '<p class="note">' + DATASETS[key].note + '</p>';
+  render();
+}
+function render(){
+  const board = document.getElementById('board');
+  board.innerHTML = STAGES.map((st,si) => {
+    const items = deals.filter(x => x.s===si && !x.lost);
+    const lost = si===4 ? deals.filter(x=>x.lost).map(cardHtml).join('') : '';
+    return '<div class="col"><h3>' + st.name + ' <span class="cnt">' + items.length + ' 个 · ' + money(items.reduce((a,b)=>a+b.amt,0)) + '</span></h3>'
+      + '<div class="def">' + st.def + '</div>' + items.map(cardHtml).join('') + lost + '</div>';
+  }).join('');
+  const won = deals.filter(x=>x.s===4&&!x.lost), open = deals.filter(x=>!x.lost&&x.s<4);
+  document.getElementById('stTotal').textContent = money(open.reduce((a,b)=>a+b.amt,0));
+  document.getElementById('stWon').textContent = money(won.reduce((a,b)=>a+b.amt,0));
+  document.getElementById('stWin').textContent = Math.round(won.length/(won.length+deals.filter(x=>x.lost).length)*100) + '%';
+}
+function cardHtml(x){
+  const i = deals.indexOf(x);
+  return '<div class="card" data-i="'+i+'"><b>'+x.n+'</b> <span class="amt">'+money(x.amt)+'</span><br>'
+    + '<span class="days">已停留 '+x.d+' 天</span><div class="ops">'
+    + (x.s<4 ? '<button onclick="advance('+i+')">推进 →</button>' : '')
+    + (!x.lost && x.s<4 ? '<button onclick="lose('+i+')">流失</button>' : '')
+    + '</div></div>';
+}
+function advance(i){ if(deals[i].s<4){ deals[i].s++; } render(); }
+function lose(i){ deals[i].lost = true; render(); }
+function showFunnel(){
+  let rows = '', prev = null;
+  const reach = si => deals.filter(x=>x.s>=si || x.lost&&x.s>=si).length + deals.filter(x=>x.lost && x.s>=si).length;
+  STAGES.forEach((st,si)=>{
+    const cnt = deals.filter(x=>x.s===si).length;
+    let rate = '—';
+    if(si>0){
+      const entered = deals.filter(x=>x.s>=si).length;
+      const fromPrev = deals.filter(x=>x.s>=si-1).length;
+      const r = fromPrev ? Math.round(entered/fromPrev*100) : 0;
+      rate = '<span class="rate'+(r<50?' low':'')+'">'+r+'%</span>';
+    }
+    rows += '<tr><td>'+(si+1)+'</td><td><b>'+st.name+'</b></td><td>'+cnt+'</td><td>'+rate+'</td><td>'+st.def.split('。')[0]+'</td></tr>';
+  });
+  document.getElementById('funnel').innerHTML =
+    '<table><tr><th>阶段</th><th>名称</th><th>商机数</th><th>向上转化率</th><th>核心任务</th></tr>'+rows+'</table>'
+    + '<p class="note">分析视角（对应 JD「数据整理 + 用户行为分析」）：转化率骤降的阶段即流程瓶颈——例如「方案/报价→谈判」转化率低，常见原因是方案与客户业务场景匹配不足，售前应优先优化该阶段的方案路径与价值呈现，而非盲目加大线索投放。</p>';
+}
+function showFlow(){
+  document.getElementById('funnel').innerHTML =
+    '<table><tr><th>阶段</th><th>客户在做什么</th><th>销售要做什么</th><th>流转标准（何时可进入下一阶段）</th></tr>'
+    + STAGES.map((st,si)=>'<tr><td><b>'+st.name+'</b></td><td>'+['了解与观望','说出痛点','评估价值与预算','比价与谈判','签约使用'][si]+'</td><td>'
+    + ['记录来源、打标签','需求澄清、找到决策人','输出方案路径与报价','异议处理、促成','交付衔接与客户成功'][si]+'</td><td>'
+    + ['完成客户画像登记','确认预算与决策链','客户确认方案可行','合同条款达成一致','回款到账'][si]+'</td></tr>').join('')
+    + '</table><p class="note">流程设计视角（对应 JD「CRM 产品需求分析与流程设计」）：CRM 系统的本质是把销售经验固化为「阶段 + 流转标准」，让每个商机有唯一状态、每次流转有据可依——这正是向客户演示 CRM 价值时最核心的讲法。</p>';
+}
+loadData('b2b');
+</script>
+</body>
+</html>
